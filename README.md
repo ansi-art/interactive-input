@@ -1,9 +1,30 @@
-xterm-mouse-tracking
+interactive-input
 ============================
-null
+Get browser-like input on the command line in pure JS using ansi escape codes.
 
 Usage
 -----
+
+```js
+const tracker = new InteractiveInput({});
+process.stdin.setRawMode(true);
+process.stdin.on('data', (buffer) => {
+    tracker.consume(buffer.toJSON());
+});
+tracker.start();
+const gracefulTerminate = ()=>{ tracker.stop(); };
+process.on('SIGTERM', gracefulTerminate);
+process.on('SIGINT', gracefulTerminate);
+tracker.on('keypress', (event)=>{
+    if(event.key === 'Escape'){
+        gracefulTerminate();
+        process.exit();
+    }
+});
+tracker.on('mouseup', (event)=>{ /* ... */  });
+tracker.on('mousedown', (event)=>{ /* ... */  });
+tracker.on('mousemove', (event)=>{ /* ... */  });
+```
 
 Testing
 -------

@@ -1,10 +1,17 @@
-import { MouseTracker } from './src/index.mjs';
+import { InteractiveInput } from './src/index.mjs';
 
-MouseTracker.globalHandler((event, tracker)=>{
-    if(event.name === 'Escape'){
-        setTimeout(()=>{
-            tracker.stop();
-            process.exit();
-        }, 100);
-    }
+const tracker = InteractiveInput.globalHandler({
+    dumpUnknown: true
+});
+
+['keypress', 'mousemove', 'mouseup', 'mousedown'].forEach((type)=>{
+    tracker.on(type, (event)=>{
+        if(event.key === 'Escape'){
+            setTimeout(()=>{
+                tracker.stop();
+                process.exit();
+            }, 100);
+        }
+        console.log(type, event);
+    });
 });

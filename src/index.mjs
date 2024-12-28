@@ -13,16 +13,19 @@ const ensureRequire = ()=> (!internalRequire) && (internalRequire = mod.createRe
  */
 //const dec2bin = (dec)=>{ return (dec >>> 0).toString(2); };
  
+import { Emitter } from 'extended-emitter';
 
-export class MouseTracker{
+export class InteractiveInput{
     constructor(options={}){
         this.options = options;
         this.captureMouseEvents = false;
+        (new Emitter()).onto(this);
     }
     
     //returns false if not consumed
     consume(event){
-        //const str = event.data.map((item)=>String.fromCharCode(item)).join('');
+        let keyName = getKeyName(event.data);
+        event.name = keyName;
         if(
             this.captureMouseEvents &&
             event.data.length === 6 &&
@@ -31,36 +34,80 @@ export class MouseTracker{
             event.data[2] === 77
         ){
             //mousemove
-            let button = null;
+            let type = null;
             switch(event.data[3]){
-                case 67 : button = 'mousemove'; break;
-                case 34 : button = 'mousedown'; break;
-                case 35 : button = 'mouseup'; break;
+                case 67 : type = 'mousemove'; break;
+                case 34 : type = 'mousedown'; break;
+                case 35 : type = 'mouseup'; break;
             }
-            const coords = { //offset by 32 then -1 for 0 indexed
+            const outputEvent = { //offset by 32 then -1 for 0 indexed
                 //value: dec2bin(event.data[3]),
-                ctrl: !!(event.data[3] & 0b0010000),
-                option: !!(event.data[3] & 0b0001000),
-                alt: !!(event.data[3] & 0b0001000),
-                shift: !!(event.data[3] & 0b0000100),
-                button,
-                x: event.data[4]-33,
-                y: event.data[5]-33
+                ctrlKey: !!(event.data[3] & 0b0010000),
+                optionKey: !!(event.data[3] & 0b0001000),
+                metaKey: false, //no access
+                altKey: !!(event.data[3] & 0b0001000),
+                shiftKey: !!(event.data[3] & 0b0000100),
+                button: '',
+                buttons: [],
+                //relatedTarget
+                pageX: event.data[4]-33,
+                pageY: event.data[5]-33
             };
-            console.log(JSON.stringify(coords));
+            this.emit(type, outputEvent);
         }else{
-            console.log(JSON.stringify(event.data));
+            if(event.name){
+                const outputEvent = { //offset by 32 then -1 for 0 indexed
+                    //value: dec2bin(event.data[3]),
+                    ctrlKey: !!(event.data[3] & 0b0010000),
+                    optionKey: !!(event.data[3] & 0b0001000),
+                    metaKey: false, //no access
+                    altKey: !!(event.data[3] & 0b0001000),
+                    shiftKey: !!(event.data[3] & 0b0000100),
+                    key: event.name,
+                    code: event.name.charCodeAt(0)
+                };
+                this.emit('keypress', outputEvent);
+                //console.log(event);
+            }else{
+                if(
+                    event.data.length === 1 &&
+                    event.data[0] < 27
+                ){
+                    const char = String.fromCharCode(event.data[0] + 96);
+                    const outputEvent = { //offset by 32 then -1 for 0 indexed
+                        //value: dec2bin(event.data[3]),
+                        ctrlKey: true,
+                        optionKey: false,
+                        metaKey: false, //no access
+                        altKey: false,
+                        shiftKey: false,
+                        key: char,
+                        code: char.charCodeAt(0)
+                    };
+                    this.emit('keypress', outputEvent);
+                    console.log(event.data, String.fromCharCode(event.data[0] + 96));
+                }else{
+                    const optionsKey = getOptionName(event.data);
+                    if(optionsKey){
+                        const outputEvent = { //offset by 32 then -1 for 0 indexed
+                            //value: dec2bin(event.data[3]),
+                            ctrlKey: false,
+                            optionKey: true,
+                            metaKey: false, //no access
+                            altKey: false,
+                            shiftKey: false,
+                            key: optionsKey,
+                            code: optionsKey.charCodeAt(0)
+                        };
+                        this.emit('keypress', outputEvent);
+                    }else{
+                        if(this.options.dumpUnknown){
+                            console.log(event);
+                        }
+                    }
+                }
+            }
         }
-        //console.log(str)
-        /*
-        console.log(
-            '??', 
-            String.fromCharCode(event.data[0]), 
-            String.fromCharCode(event.data[1]),
-            event.data.slice(2)
-            //String.fromCharCode(data[2]),
-            //String.fromCharCode(data[3])
-        ); //*/
     }
     
     start(){
@@ -74,22 +121,17 @@ export class MouseTracker{
     }
 }
 
-MouseTracker.globalHandler = (inputHandler)=>{
-    const tracker = new MouseTracker();
+InteractiveInput.globalHandler = (options={})=>{
+    const tracker = new InteractiveInput(options);
     tracker.start();
     process.stdin.setRawMode(true);
     process.stdin.on('data', (buffer) => {
-        const event = buffer.toJSON();
-        let keyName = getKeyName(event.data);
-        event.name = keyName;
-        if(tracker.consume(event)) return;
-        inputHandler(event, tracker);
+        tracker.consume(buffer.toJSON());
     });
-    const gracefulTerminate = ()=>{
-        tracker.stop();
-    };
+    const gracefulTerminate = ()=>{ tracker.stop(); };
     process.on('SIGTERM', gracefulTerminate);
     process.on('SIGINT', gracefulTerminate);
+    return tracker;
 };
 
 const Key = {
@@ -165,6 +207,36 @@ const keyMap = [
     { data: [[27, 91, 50, 52, 126]], keyName: Key.F12 }
 ];
 
+const optionsMap = [
+    // other ASCII
+    { data: [[195, 165]], keyName: 'a' },
+    { data: [[226, 136, 171]], keyName: 'b' },
+    { data: [[195, 167]], keyName: 'c' },
+    { data: [[226, 136, 130]], keyName: 'd' },
+    { data: [[194, 180]], keyName: 'e' },
+    { data: [[198, 146]], keyName: 'f' },
+    { data: [[194, 169]], keyName: 'g' },
+    { data: [[203, 153]], keyName: 'h' },
+    { data: [[203, 134]], keyName: 'i' },
+    { data: [[226, 136, 134]], keyName: 'j' },
+    { data: [[203, 154]], keyName: 'k' },
+    { data: [[194, 172]], keyName: 'l' },
+    { data: [[194, 181]], keyName: 'm' },
+    { data: [[203, 156]], keyName: 'n' },
+    { data: [[195, 184]], keyName: 'o' },
+    { data: [[207, 128]], keyName: 'p' },
+    { data: [[197, 147]], keyName: 'q' },
+    { data: [[194, 174]], keyName: 'r' },
+    { data: [[195, 159]], keyName: 's' },
+    { data: [[226, 128, 160]], keyName: 't' },
+    { data: [[194, 168]], keyName: 'u' },
+    { data: [[226, 136, 154]], keyName: 'v' },
+    { data: [[226, 136, 145]], keyName: 'w' },
+    { data: [[226, 137, 136]], keyName: 'x' },
+    //{ data: [[8]], keyName: 'y' }, //overlaps with '//'
+    { data: [[206, 169]], keyName: 'z' }
+];
+
 export const getKeyName = (data) => {
     let match;
     
@@ -173,6 +245,26 @@ export const getKeyName = (data) => {
     }
     
     match = keyMap.filter((entry) => {
+        const innerResult = entry.data.filter((subEntry) => subEntry.join(',') === data.join(','));
+    
+        return innerResult.length > 0;
+    });
+    
+    if (match.length === 1) {
+        return match[0].keyName;
+    }
+    
+    return Key.Unknown;
+};
+
+export const getOptionName = (data) => {
+    let match;
+    
+    if (isSingleBytePrintableAscii(data)) {
+        return String.fromCharCode(data[0]);
+    }
+    
+    match = optionsMap.filter((entry) => {
         const innerResult = entry.data.filter((subEntry) => subEntry.join(',') === data.join(','));
     
         return innerResult.length > 0;
